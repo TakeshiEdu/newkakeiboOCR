@@ -31,16 +31,18 @@ jobs:
         run: npx expo install --fix && npm uninstall expo-dev-client
 
       - name: Prebuild iOS
-        run: npx expo prebuild --platform ios --clean
+        run: RCT_NEW_ARCH_ENABLED=1 npx expo prebuild --platform ios --clean
 
       - name: Install CocoaPods
         run: |
+          export RCT_NEW_ARCH_ENABLED=1
           cd ios
           pod install
 
       - name: Build iOS app (unsigned)
         run: |
           set -euo pipefail
+          export RCT_NEW_ARCH_ENABLED=1
           cd ios
           xcodebuild build \
             -workspace newkakeibo.xcworkspace \
