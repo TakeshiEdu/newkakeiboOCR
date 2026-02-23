@@ -127,7 +127,7 @@ jobs:
             ls -la "$APP_PATH/Info.plist"
           fi
           
-          # IPA パッケージング (ditto を使用)
+          # IPA パッケージング (zip -y でsymlink保持)
           mkdir -p Payload
           cp -a "$APP_PATH" "Payload/$APP_NAME"
           
@@ -135,9 +135,12 @@ jobs:
           ls -la Payload/
           ls -la "Payload/$APP_NAME/Info.plist" 2>/dev/null || echo "WARNING: Info.plist still missing in Payload"
           
-          # ditto で zip 作成 (macOS ネイティブで確実)
-          ditto -c -k --sequesterRsrc Payload payload.zip
-          mv payload.zip newkakeibo-unsigned.ipa
+          # symlink を確認
+          echo "=== Symlinks in .app ==="
+          find "Payload/$APP_NAME" -type l | head -20
+          
+          # zip -y でsymlink をそのまま保持して圧縮
+          zip -y -r -q newkakeibo-unsigned.ipa Payload
           
           # IPA の中身を検証
           echo "=== IPA contents (top entries) ==="
