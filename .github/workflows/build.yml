@@ -54,6 +54,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            PRODUCT_BUNDLE_IDENTIFIER=com.newkakeibo.app \
+            GENERATE_INFOPLIST_FILE=NO \
             ENABLE_PREVIEWS=NO \
             2>&1 | tail -50
 
@@ -82,50 +84,53 @@ jobs:
           
           echo "=== Checking Info.plist ==="
           if [ -f "$APP_PATH/Info.plist" ]; then
-            echo "✅ Info.plist found!"
-            /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist"
-            /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_PATH/Info.plist"
-          else
-            echo "❌ Info.plist NOT in .app root"
-            echo "Searching for any Info.plist..."
-            find "$APP_PATH" -name "Info.plist" -type f 2>/dev/null
+            echo "✅ Info.plist found in built .app"
+            BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist" 2>/dev/null || echo "")
+            echo "Bundle ID: $BUNDLE_ID"
             
-            echo "Searching for any plist..."
-            find "$APP_PATH" -name "*.plist" -type f 2>/dev/null | head -20
-            
-            # Info.plist がない場合、Expo prebuild で生成された ios/newkakeibo/Info.plist をコピー
-            if [ -f "ios/newkakeibo/Info.plist" ]; then
-              echo "Copying Info.plist from ios/newkakeibo/"
-              cp "ios/newkakeibo/Info.plist" "$APP_PATH/Info.plist"
-            else
-              echo "Generating minimal Info.plist..."
-              EXEC_NAME=$(ls "$APP_PATH/" | grep -v '\.' | head -1)
-              cat > "$APP_PATH/Info.plist" << PLISTEOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleIdentifier</key>
-            <string>com.newkakeibo.app</string>
-            <key>CFBundleName</key>
-            <string>newkakeibo</string>
-            <key>CFBundleExecutable</key>
-            <string>${EXEC_NAME:-newkakeibo}</string>
-            <key>CFBundleVersion</key>
-            <string>1</string>
-            <key>CFBundleShortVersionString</key>
-            <string>1.0.0</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>MinimumOSVersion</key>
-            <string>16.0</string>
-          </dict>
-          </plist>
-          PLISTEOF
+            # 未解決の Xcode 変数 $(…) が残っていないかチェック
+            if grep -q '\$(' "$APP_PATH/Info.plist"; then
+              echo "⚠️ Unresolved Xcode variables found! Regenerating..."
+              rm "$APP_PATH/Info.plist"
             fi
-            echo "Info.plist is now present:"
-            ls -la "$APP_PATH/Info.plist"
           fi
+          
+          # Info.plist が無い or 変数未解決の場合、解決済みplistを生成
+          if [ ! -f "$APP_PATH/Info.plist" ]; then
+            echo "Generating resolved Info.plist..."
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.newkakeibo.app" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleName string newkakeibo" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string newkakeibo" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string newkakeibo" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0.0" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleInfoDictionaryVersion string 6.0" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :MinimumOSVersion string 16.0" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms array" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleSupportedPlatforms:0 string iPhoneOS" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :UIDeviceFamily array" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :UIDeviceFamily:0 integer 1" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :UIDeviceFamily:1 integer 2" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :UIRequiredDeviceCapabilities array" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :UIRequiredDeviceCapabilities:0 string arm64" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :UILaunchStoryboardName string SplashScreen" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string レシートを撮影して家計簿に記録するためにカメラを使用します。" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$APP_PATH/Info.plist"
+            echo "✅ Info.plist generated"
+          fi
+          
+          # 最終確認
+          echo "=== Final Info.plist validation ==="
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_PATH/Info.plist"
+          # 残留変数チェック
+          if grep -q '\$(' "$APP_PATH/Info.plist"; then
+            echo "FATAL: Unresolved variables still present!"
+            cat "$APP_PATH/Info.plist"
+            exit 1
+          fi
+          echo "✅ No unresolved variables"
           
           # IPA パッケージング (zip -y でsymlink保持)
           mkdir -p Payload
