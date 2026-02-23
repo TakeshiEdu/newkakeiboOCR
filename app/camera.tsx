@@ -7,24 +7,24 @@
  * - シャッターボタン
  * - 撮影後プレビュー → OCR実行 → receipt-confirm へ遷移
  */
-import React, { useRef, useState, useCallback } from 'react';
+import { Colors } from '@/constants/Colors';
+import { parseReceipt } from '@/lib/ocr/receipt-parser';
+import { recognizeText } from '@/lib/ocr/receipt-scanner';
+import { Ionicons } from '@expo/vector-icons';
+import { CameraView, FlashMode, useCameraPermissions } from 'expo-camera';
+import { router } from 'expo-router';
+import React, { useRef, useState } from 'react';
 import {
-    View,
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    StatusBar,
+    StyleSheet,
     Text,
     TouchableOpacity,
-    StyleSheet,
-    ActivityIndicator,
-    Image,
-    Alert,
-    StatusBar,
-    Dimensions,
+    View,
 } from 'react-native';
-import { CameraView, CameraType, useCameraPermissions, FlashMode } from 'expo-camera';
-import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { Colors } from '@/constants/Colors';
-import { recognizeText } from '@/lib/ocr/receipt-scanner';
-import { parseReceipt } from '@/lib/ocr/receipt-parser';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const GUIDE_PADDING = 32;

@@ -9,30 +9,30 @@
  * - 学習同意トグル
  * - 保存ボタン
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    ScrollView,
-    StyleSheet,
-    Alert,
-    Animated,
-    KeyboardAvoidingView,
-    Platform,
-    Modal,
-    FlatList,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { DEFAULT_CATEGORIES } from '@/constants/categories';
 import { Colors } from '@/constants/Colors';
 import { FontSize, Radius, Spacing } from '@/constants/theme';
 import { useDatabase } from '@/hooks/useDatabase';
 import { categorize } from '@/lib/categorizer/categorizer';
 import { getCategoryColor, getCategoryDef, getCategoryIcon } from '@/lib/category-utils';
-import { DEFAULT_CATEGORIES } from '@/constants/categories';
-import type { ParsedReceipt, ParsedReceiptItem, CategoryRule, Category } from '@/types';
+import type { Category, CategoryRule, ParsedReceipt } from '@/types';
+import { Ionicons } from '@expo/vector-icons';
+import { router, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    Alert,
+    Animated,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 
 interface EditableItem {
     id: string;

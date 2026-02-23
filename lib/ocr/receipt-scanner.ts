@@ -4,8 +4,8 @@
  * react-native-mlkit-ocr を使用してレシート画像からテキストを抽出する。
  * オフライン（オンデバイス）で動作。
  */
-import MlkitOcr from 'react-native-mlkit-ocr';
 import type { OcrResult, OcrResultLine } from '@/types';
+import MlkitOcr from 'react-native-mlkit-ocr';
 
 /**
  * 画像URIからOCRテキスト認識を実行する
