@@ -40,6 +40,7 @@ jobs:
 
       - name: Build iOS app (unsigned)
         run: |
+          set -euo pipefail
           cd ios
           xcodebuild build \
             -workspace newkakeibo.xcworkspace \
@@ -53,13 +54,34 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             INFOPLIST_EXPAND_BUILD_SETTINGS=YES \
             ENABLE_PREVIEWS=NO \
-            2>&1 | tail -50
+            2>&1 | tee /tmp/xcodebuild.log | tail -50
+
+          APP_CANDIDATE="build/Build/Products/Release-iphoneos/newkakeibo.app"
+          if [ -d "$APP_CANDIDATE" ]; then
+            echo "Expected app bundle exists: $APP_CANDIDATE"
+            ls -la "$APP_CANDIDATE" | head -30
+          fi
 
       - name: Package IPA for Sideloadly
         run: |
-          APP_PATH=$(find ios/build/Build/Products -name "*.app" -type d | head -1)
-          if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
+          set -euo pipefail
+
+          # まず期待される成果物パスを優先
+          APP_PATH="ios/build/Build/Products/Release-iphoneos/newkakeibo.app"
+
+          # フォールバック: 実行ファイル(Mach-O)を持つ .app だけを採用
+          if [ ! -d "$APP_PATH" ]; then
+            APP_PATH=$(find ios/build -name "*.app" -type d | while read app; do
+              if [ -f "$app/newkakeibo" ]; then
+                echo "$app"
+                break
+              fi
+              MACHO=$(find "$app" -maxdepth 1 -type f | while read f; do file "$f" | grep -q "Mach-O" && echo "$f" && break; done)
+              if [ -n "${MACHO:-}" ]; then
+                echo "$app"
+                break
+              fi
+            done | head -1)
           fi
           if [ -z "$APP_PATH" ]; then
             echo "FATAL: .app not found"
@@ -72,6 +94,17 @@ jobs:
 
           echo "=== Build app summary ==="
           ls -la "$APP_PATH" | head -20
+
+          if [ ! -f "$APP_PATH/newkakeibo" ]; then
+            MACHO_PATH=$(find "$APP_PATH" -maxdepth 1 -type f | while read f; do file "$f" | grep -q "Mach-O" && echo "$f" && break; done)
+            if [ -n "${MACHO_PATH:-}" ]; then
+              echo "Detected executable: $(basename "$MACHO_PATH")"
+            else
+              echo "FATAL: no executable found in selected .app"
+              find "$APP_PATH" -maxdepth 2 -type f | head -50
+              exit 1
+            fi
+          fi
 
           # Payload へ symlink を実体化してコピー（Sideloadly互換性向上）
           mkdir -p Payload
@@ -97,6 +130,14 @@ jobs:
             if [ -z "$APP_EXEC" ]; then
               APP_EXEC="newkakeibo"
             fi
+            cat > "Payload/$APP_NAME/Info.plist" << 'PLISTEOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+</dict>
+</plist>
+PLISTEOF
             /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.newkakeibo.app" "Payload/$APP_NAME/Info.plist"
             /usr/libexec/PlistBuddy -c "Add :CFBundleName string newkakeibo" "Payload/$APP_NAME/Info.plist"
             /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $APP_EXEC" "Payload/$APP_NAME/Info.plist"
