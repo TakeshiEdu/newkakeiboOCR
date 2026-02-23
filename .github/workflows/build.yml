@@ -41,62 +41,111 @@ jobs:
           cd ios
           pod install
 
-      - name: Build iOS archive (unsigned)
+      - name: Build iOS app (unsigned)
         run: |
           cd ios
-          xcodebuild archive \
+          xcodebuild build \
             -workspace newkakeibo.xcworkspace \
             -scheme newkakeibo \
             -configuration Release \
             -sdk iphoneos \
             -arch arm64 \
-            -archivePath "$GITHUB_WORKSPACE/build/newkakeibo.xcarchive" \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=- \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY="" \
             ENABLE_PREVIEWS=NO \
-            2>&1 | tail -80
+            2>&1 | tail -50
 
-      - name: Package IPA
+      - name: Debug and Package IPA
         run: |
-          ARCHIVE="build/newkakeibo.xcarchive"
+          echo "=== Searching for .app bundles ==="
+          find ios/build -name "*.app" -type d 2>/dev/null
           
-          # Archive の中身をデバッグ
-          echo "=== Archive contents ==="
-          find "$ARCHIVE/Products" -maxdepth 3 -type d 2>/dev/null || true
-          
-          # .app を探す
-          APP_PATH=$(find "$ARCHIVE/Products" -name "*.app" -type d | head -1)
+          APP_PATH=$(find ios/build/Build/Products -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
+          fi
           
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: .app not found in archive, trying build dir..."
-            APP_PATH=$(find build -name "*.app" -type d | head -1)
+            echo "FATAL: No .app found anywhere in ios/build"
+            find ios/build -maxdepth 5 -type d
+            exit 1
           fi
           
-          echo "Found app at: $APP_PATH"
-          echo "=== .app contents ==="
-          ls -la "$APP_PATH/" | head -20
+          echo "Found .app at: $APP_PATH"
+          APP_NAME=$(basename "$APP_PATH")
+          echo "App bundle name: $APP_NAME"
           
-          if [ ! -f "$APP_PATH/Info.plist" ]; then
-            echo "Info.plist not at root, searching..."
-            find "$APP_PATH" -name "Info.plist" -type f
-            # Expo/RN は Info.plist を embedded にすることがある
-            # PLIST を生成して埋め込む
-            BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist" 2>/dev/null || echo "com.newkakeibo.app")
-            echo "Bundle ID: $BUNDLE_ID"
+          echo "=== Top-level .app contents ==="
+          ls -la "$APP_PATH/"
+          
+          echo "=== Checking Info.plist ==="
+          if [ -f "$APP_PATH/Info.plist" ]; then
+            echo "✅ Info.plist found!"
+            /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist"
+            /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_PATH/Info.plist"
+          else
+            echo "❌ Info.plist NOT in .app root"
+            echo "Searching for any Info.plist..."
+            find "$APP_PATH" -name "Info.plist" -type f 2>/dev/null
+            
+            echo "Searching for any plist..."
+            find "$APP_PATH" -name "*.plist" -type f 2>/dev/null | head -20
+            
+            # Info.plist がない場合、Expo prebuild で生成された ios/newkakeibo/Info.plist をコピー
+            if [ -f "ios/newkakeibo/Info.plist" ]; then
+              echo "Copying Info.plist from ios/newkakeibo/"
+              cp "ios/newkakeibo/Info.plist" "$APP_PATH/Info.plist"
+            else
+              echo "Generating minimal Info.plist..."
+              EXEC_NAME=$(ls "$APP_PATH/" | grep -v '\.' | head -1)
+              cat > "$APP_PATH/Info.plist" << PLISTEOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleIdentifier</key>
+            <string>com.newkakeibo.app</string>
+            <key>CFBundleName</key>
+            <string>newkakeibo</string>
+            <key>CFBundleExecutable</key>
+            <string>${EXEC_NAME:-newkakeibo}</string>
+            <key>CFBundleVersion</key>
+            <string>1</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>MinimumOSVersion</key>
+            <string>16.0</string>
+          </dict>
+          </plist>
+          PLISTEOF
+            fi
+            echo "Info.plist is now present:"
+            ls -la "$APP_PATH/Info.plist"
           fi
           
-          # IPA パッケージング
+          # IPA パッケージング (ditto を使用)
           mkdir -p Payload
-          cp -a "$APP_PATH" Payload/
+          cp -a "$APP_PATH" "Payload/$APP_NAME"
           
-          # 確認
-          echo "=== Payload contents ==="
+          echo "=== Payload structure ==="
           ls -la Payload/
-          ls -la Payload/*.app/ | head -10
+          ls -la "Payload/$APP_NAME/Info.plist" 2>/dev/null || echo "WARNING: Info.plist still missing in Payload"
           
-          zip -r -q newkakeibo-unsigned.ipa Payload
+          # ditto で zip 作成 (macOS ネイティブで確実)
+          ditto -c -k --sequesterRsrc Payload payload.zip
+          mv payload.zip newkakeibo-unsigned.ipa
+          
+          # IPA の中身を検証
+          echo "=== IPA contents (top entries) ==="
+          unzip -l newkakeibo-unsigned.ipa | head -30
+          
+          echo "=== Checking for Info.plist in IPA ==="
+          unzip -l newkakeibo-unsigned.ipa | grep "Info.plist"
+          
           echo "IPA size: $(du -h newkakeibo-unsigned.ipa | cut -f1)"
 
       - name: Upload IPA artifact
