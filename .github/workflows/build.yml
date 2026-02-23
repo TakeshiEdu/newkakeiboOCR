@@ -130,14 +130,7 @@ jobs:
             if [ -z "$APP_EXEC" ]; then
               APP_EXEC="newkakeibo"
             fi
-            cat > "Payload/$APP_NAME/Info.plist" << 'PLISTEOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-</dict>
-</plist>
-PLISTEOF
+            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' '<plist version="1.0">' '<dict>' '</dict>' '</plist>' > "Payload/$APP_NAME/Info.plist"
             /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.newkakeibo.app" "Payload/$APP_NAME/Info.plist"
             /usr/libexec/PlistBuddy -c "Add :CFBundleName string newkakeibo" "Payload/$APP_NAME/Info.plist"
             /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $APP_EXEC" "Payload/$APP_NAME/Info.plist"
