@@ -81,24 +81,47 @@ jobs:
           echo "=== Symlink check in Payload (must be empty) ==="
           find "Payload/$APP_NAME" -type l | head -20
 
-          # Info.plist 内の未解決変数を解消
-          if [ -f "Payload/$APP_NAME/Info.plist" ]; then
-            sed -i '' \
-              -e 's/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.newkakeibo.app/g' \
-              -e 's/\$(PRODUCT_NAME:rfc1034identifier)/newkakeibo/g' \
-              -e 's/\$(PRODUCT_NAME)/newkakeibo/g' \
-              -e 's/\$(PRODUCT_MODULE_NAME)/newkakeibo/g' \
-              -e 's/\$(MARKETING_VERSION)/1.0.0/g' \
-              -e 's/\$(CURRENT_PROJECT_VERSION)/1/g' \
-              -e 's/\$(DEVELOPMENT_TEAM)//g' \
-              -e 's/\$([^)]*)//g' \
-              "Payload/$APP_NAME/Info.plist"
+          # Info.plist を確実に root へ配置
+          if [ ! -f "Payload/$APP_NAME/Info.plist" ]; then
+            FOUND_PLIST=$(find "Payload/$APP_NAME" -name "Info.plist" -type f | head -1)
+            if [ -n "$FOUND_PLIST" ]; then
+              echo "Info.plist found at: $FOUND_PLIST"
+              cp "$FOUND_PLIST" "Payload/$APP_NAME/Info.plist"
+            fi
           fi
+
+          # まだ無い場合は最低限の Info.plist を生成
+          if [ ! -f "Payload/$APP_NAME/Info.plist" ]; then
+            echo "Info.plist missing. Generating fallback plist..."
+            APP_EXEC=$(find "Payload/$APP_NAME" -maxdepth 1 -type f | while read f; do file "$f" | grep -q "Mach-O" && basename "$f" && break; done)
+            if [ -z "$APP_EXEC" ]; then
+              APP_EXEC="newkakeibo"
+            fi
+            /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.newkakeibo.app" "Payload/$APP_NAME/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleName string newkakeibo" "Payload/$APP_NAME/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $APP_EXEC" "Payload/$APP_NAME/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "Payload/$APP_NAME/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0.0" "Payload/$APP_NAME/Info.plist"
+            /usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "Payload/$APP_NAME/Info.plist"
+          fi
+
+          # Info.plist 内の未解決変数を解消
+          sed -i '' \
+            -e 's/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.newkakeibo.app/g' \
+            -e 's/\$(PRODUCT_NAME:rfc1034identifier)/newkakeibo/g' \
+            -e 's/\$(PRODUCT_NAME)/newkakeibo/g' \
+            -e 's/\$(PRODUCT_MODULE_NAME)/newkakeibo/g' \
+            -e 's/\$(MARKETING_VERSION)/1.0.0/g' \
+            -e 's/\$(CURRENT_PROJECT_VERSION)/1/g' \
+            -e 's/\$(DEVELOPMENT_TEAM)//g' \
+            -e 's/\$([^)]*)//g' \
+            "Payload/$APP_NAME/Info.plist"
 
           # stale signature を除去（Sideloadlyで再署名）
           find "Payload/$APP_NAME" -name "_CodeSignature" -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
           echo "=== Validate app metadata ==="
+          ls -la "Payload/$APP_NAME" | head -30
           plutil -lint "Payload/$APP_NAME/Info.plist"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "Payload/$APP_NAME/Info.plist" || true
           /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "Payload/$APP_NAME/Info.plist" || true
