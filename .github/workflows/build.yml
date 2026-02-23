@@ -1,4 +1,4 @@
-name: Build iOS & Android
+name: Build iOS
 
 on:
   workflow_dispatch:
@@ -6,9 +6,6 @@ on:
     branches: [main, master]
 
 jobs:
-  # ═══════════════════════════════════════════
-  # iOS: unsigned IPA (Sideloadly/AltStore用)
-  # ═══════════════════════════════════════════
   build-ios:
     name: iOS Build (unsigned IPA)
     runs-on: macos-15
@@ -54,110 +51,63 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            INFOPLIST_EXPAND_BUILD_SETTINGS=YES \
             ENABLE_PREVIEWS=NO \
             2>&1 | tail -50
 
-      - name: Debug and Package IPA
+      - name: Package IPA for Sideloadly
         run: |
-          echo "=== Searching for .app bundles ==="
-          find ios/build -name "*.app" -type d 2>/dev/null
-          
           APP_PATH=$(find ios/build/Build/Products -name "*.app" -type d | head -1)
           if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
           fi
-          
           if [ -z "$APP_PATH" ]; then
-            echo "FATAL: No .app found anywhere in ios/build"
+            echo "FATAL: .app not found"
             find ios/build -maxdepth 5 -type d
             exit 1
           fi
-          
-          echo "Found .app at: $APP_PATH"
+
           APP_NAME=$(basename "$APP_PATH")
-          echo "App bundle name: $APP_NAME"
-          
-          echo "=== Top-level .app contents ==="
-          ls -la "$APP_PATH/"
-          
-          # ---- Info.plist 修正 ----
-          echo "=== Fixing Info.plist ==="
-          if [ -f "$APP_PATH/Info.plist" ]; then
-            # 未解決 Xcode 変数を sed で解決
-            sed -i '' \
-              -e 's/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.newkakeibo.app/g' \
-              -e 's/\$(PRODUCT_NAME:rfc1034identifier)/newkakeibo/g' \
-              -e 's/\$(PRODUCT_NAME)/newkakeibo/g' \
-              -e 's/\$(PRODUCT_MODULE_NAME)/newkakeibo/g' \
-              -e 's/\$(MARKETING_VERSION)/1.0.0/g' \
-              -e 's/\$(CURRENT_PROJECT_VERSION)/1/g' \
-              -e 's/\$(DEVELOPMENT_TEAM)//g' \
-              -e 's/\$([^)]*)//g' \
-              "$APP_PATH/Info.plist"
-            echo "Resolved Info.plist:"
-            /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist"
-            /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP_PATH/Info.plist"
-          else
-            echo "No Info.plist - copying from prebuild"
-            cp "ios/newkakeibo/Info.plist" "$APP_PATH/Info.plist"
-            sed -i '' \
-              -e 's/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.newkakeibo.app/g' \
-              -e 's/\$(PRODUCT_NAME:rfc1034identifier)/newkakeibo/g' \
-              -e 's/\$(PRODUCT_NAME)/newkakeibo/g' \
-              -e 's/\$(PRODUCT_MODULE_NAME)/newkakeibo/g' \
-              -e 's/\$(MARKETING_VERSION)/1.0.0/g' \
-              -e 's/\$(CURRENT_PROJECT_VERSION)/1/g' \
-              -e 's/\$(DEVELOPMENT_TEAM)//g' \
-              -e 's/\$([^)]*)//g' \
-              "$APP_PATH/Info.plist"
-          fi
-          plutil -lint "$APP_PATH/Info.plist"
-          
-          # ---- Frameworks 内 Info.plist も変数解決 ----
-          echo "=== Fixing Framework Info.plists ==="
-          find "$APP_PATH/Frameworks" -name "Info.plist" -type f 2>/dev/null | while read plist; do
-            sed -i '' 's/\$([^)]*)//g' "$plist" 2>/dev/null || true
-          done
-          
-          # ---- Ad-hoc 署名 (Sideloadly が再署名するために必要) ----
-          echo "=== Ad-hoc signing all binaries ==="
-          
-          # 1. Frameworks 内の dylib / framework を先に署名
-          find "$APP_PATH/Frameworks" -name "*.framework" -type d 2>/dev/null | while read fw; do
-            echo "  Signing framework: $(basename "$fw")"
-            codesign --force --sign - --timestamp=none "$fw" 2>&1 || true
-          done
-          
-          find "$APP_PATH/Frameworks" -name "*.dylib" -type f 2>/dev/null | while read dl; do
-            echo "  Signing dylib: $(basename "$dl")"
-            codesign --force --sign - --timestamp=none "$dl" 2>&1 || true
-          done
-          
-          # 2. PlugIns / Extensions
-          find "$APP_PATH/PlugIns" -name "*.appex" -type d 2>/dev/null | while read ext; do
-            echo "  Signing extension: $(basename "$ext")"
-            codesign --force --sign - --timestamp=none "$ext" 2>&1 || true
-          done
-          
-          # 3. メインバイナリを署名
-          echo "  Signing main app bundle..."
-          codesign --force --sign - --timestamp=none "$APP_PATH" 2>&1
-          
-          # 署名確認
-          echo "=== Verify codesign ==="
-          codesign -vv "$APP_PATH" 2>&1 || true
-          
-          # ---- IPA パッケージング ----
-          echo "=== Packaging IPA ==="
+          echo "Using app bundle: $APP_NAME"
+
+          echo "=== Build app summary ==="
+          ls -la "$APP_PATH" | head -20
+
+          # Payload へ symlink を実体化してコピー（Sideloadly互換性向上）
           mkdir -p Payload
-          cp -a "$APP_PATH" "Payload/$APP_NAME"
-          
-          # zip -y でsymlink保持
-          zip -y -r -q newkakeibo-unsigned.ipa Payload
-          
-          # IPA 検証
-          echo "=== IPA verification ==="
-          unzip -l newkakeibo-unsigned.ipa | grep -E "Info\.plist|_CodeSignature" | head -10
+          mkdir -p "Payload/$APP_NAME"
+          rsync -aL "$APP_PATH/" "Payload/$APP_NAME/"
+
+          echo "=== Symlink check in Payload (must be empty) ==="
+          find "Payload/$APP_NAME" -type l | head -20
+
+          # Info.plist 内の未解決変数を解消
+          if [ -f "Payload/$APP_NAME/Info.plist" ]; then
+            sed -i '' \
+              -e 's/\$(PRODUCT_BUNDLE_IDENTIFIER)/com.newkakeibo.app/g' \
+              -e 's/\$(PRODUCT_NAME:rfc1034identifier)/newkakeibo/g' \
+              -e 's/\$(PRODUCT_NAME)/newkakeibo/g' \
+              -e 's/\$(PRODUCT_MODULE_NAME)/newkakeibo/g' \
+              -e 's/\$(MARKETING_VERSION)/1.0.0/g' \
+              -e 's/\$(CURRENT_PROJECT_VERSION)/1/g' \
+              -e 's/\$(DEVELOPMENT_TEAM)//g' \
+              -e 's/\$([^)]*)//g' \
+              "Payload/$APP_NAME/Info.plist"
+          fi
+
+          # stale signature を除去（Sideloadlyで再署名）
+          find "Payload/$APP_NAME" -name "_CodeSignature" -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
+          echo "=== Validate app metadata ==="
+          plutil -lint "Payload/$APP_NAME/Info.plist"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "Payload/$APP_NAME/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "Payload/$APP_NAME/Info.plist" || true
+
+          # IPA 作成
+          zip -r -q newkakeibo-unsigned.ipa Payload
+
+          echo "=== IPA entries ==="
+          unzip -l newkakeibo-unsigned.ipa | grep -E "Payload/.+\.app/$|Info\.plist|Frameworks" | head -30
           echo "IPA size: $(du -h newkakeibo-unsigned.ipa | cut -f1)"
 
       - name: Upload IPA artifact
@@ -167,45 +117,3 @@ jobs:
           path: newkakeibo-unsigned.ipa
           retention-days: 30
 
-  # ═══════════════════════════════════════════
-  # Android: Debug APK
-  # ═══════════════════════════════════════════
-  build-android:
-    name: Android Build (APK)
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Prebuild Android
-        run: npx expo prebuild --platform android --clean
-
-      - name: Build Android APK
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleRelease
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: newkakeibo-android
-          path: android/app/build/outputs/apk/release/*.apk
-          retention-days: 30
