@@ -167,6 +167,14 @@ jobs:
           unzip -l newkakeibo-unsigned.ipa | grep -E "Payload/.+\.app/$|Info\.plist|Frameworks" | head -30
           echo "IPA size: $(du -h newkakeibo-unsigned.ipa | cut -f1)"
 
+      - name: Upload xcodebuild log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: /tmp/xcodebuild.log
+          retention-days: 7
+
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
