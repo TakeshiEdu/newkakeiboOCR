@@ -60,16 +60,32 @@ jobs:
 
       - name: Package IPA
         run: |
-          cd ios/build/Build/Products/Release-iphoneos
-          mkdir -p Payload
-          cp -r newkakeibo.app Payload/
+          # .app バンドルを探す
+          APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
+          echo "Found app at: $APP_PATH"
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: .app bundle not found!"
+            find ios/build -type d -maxdepth 6
+            exit 1
+          fi
+          
+          # Info.plist が存在するか確認
+          ls -la "$APP_PATH/Info.plist" || echo "Warning: Info.plist not found in .app"
+          
+          # IPA パッケージング
+          WORK_DIR=$(mktemp -d)
+          mkdir -p "$WORK_DIR/Payload"
+          cp -r "$APP_PATH" "$WORK_DIR/Payload/"
+          cd "$WORK_DIR"
           zip -r -q newkakeibo-unsigned.ipa Payload
+          mv newkakeibo-unsigned.ipa "$GITHUB_WORKSPACE/"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: newkakeibo-ios-unsigned
-          path: ios/build/Build/Products/Release-iphoneos/newkakeibo-unsigned.ipa
+          path: newkakeibo-unsigned.ipa
           retention-days: 30
 
   # ═══════════════════════════════════════════
