@@ -44,6 +44,7 @@ jobs:
           set -euo pipefail
           export RCT_NEW_ARCH_ENABLED=1
           cd ios
+          set +e
           xcodebuild build \
             -workspace newkakeibo.xcworkspace \
             -scheme newkakeibo \
@@ -57,6 +58,18 @@ jobs:
             INFOPLIST_EXPAND_BUILD_SETTINGS=YES \
             ENABLE_PREVIEWS=NO \
             2>&1 | tee /tmp/xcodebuild.log | tail -50
+          BUILD_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$BUILD_EXIT" -ne 0 ]; then
+            echo "=== xcodebuild failed: showing focused errors ==="
+            grep -n "error:" /tmp/xcodebuild.log | tail -80 || true
+            echo "=== AppDelegate.swift related lines ==="
+            grep -n "AppDelegate.swift\|AppDelegate" /tmp/xcodebuild.log | tail -80 || true
+            echo "=== SplashScreen.storyboard related lines ==="
+            grep -n "SplashScreen.storyboard\|CompileStoryboard\|IB" /tmp/xcodebuild.log | tail -80 || true
+            exit "$BUILD_EXIT"
+          fi
 
           APP_CANDIDATE="build/Build/Products/Release-iphoneos/newkakeibo.app"
           if [ -d "$APP_CANDIDATE" ]; then
