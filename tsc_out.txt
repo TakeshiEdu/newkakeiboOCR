@@ -1,0 +1,1 @@
+﻿app/(tabs)/chat.tsx(116,32): error TS2345: Argument of type '"/(tabs)/"' is not assignable to parameter of type '"/" | RelativePathString | ExternalPathString | "/categories" | `/categories?${string}` | `/categories#${string}` | "/chat-input" | `/chat-input?${string}` | `/chat-input#${string}` | "/onboarding" | ... 56 more ... | { ...; }'.
