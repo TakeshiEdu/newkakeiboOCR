@@ -41,45 +41,63 @@ jobs:
           cd ios
           pod install
 
-      - name: Build iOS app (unsigned)
+      - name: Build iOS archive (unsigned)
         run: |
           cd ios
-          xcodebuild \
+          xcodebuild archive \
             -workspace newkakeibo.xcworkspace \
             -scheme newkakeibo \
             -configuration Release \
             -sdk iphoneos \
             -arch arm64 \
+            -archivePath "$GITHUB_WORKSPACE/build/newkakeibo.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" \
+            CODE_SIGN_IDENTITY=- \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
             ENABLE_PREVIEWS=NO \
-            -derivedDataPath build \
-            2>&1 | tail -50
+            2>&1 | tail -80
 
       - name: Package IPA
         run: |
-          # .app バンドルを探す
-          APP_PATH=$(find ios/build -name "*.app" -type d | head -1)
-          echo "Found app at: $APP_PATH"
+          ARCHIVE="build/newkakeibo.xcarchive"
+          
+          # Archive の中身をデバッグ
+          echo "=== Archive contents ==="
+          find "$ARCHIVE/Products" -maxdepth 3 -type d 2>/dev/null || true
+          
+          # .app を探す
+          APP_PATH=$(find "$ARCHIVE/Products" -name "*.app" -type d | head -1)
           
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: .app bundle not found!"
-            find ios/build -type d -maxdepth 6
-            exit 1
+            echo "ERROR: .app not found in archive, trying build dir..."
+            APP_PATH=$(find build -name "*.app" -type d | head -1)
           fi
           
-          # Info.plist が存在するか確認
-          ls -la "$APP_PATH/Info.plist" || echo "Warning: Info.plist not found in .app"
+          echo "Found app at: $APP_PATH"
+          echo "=== .app contents ==="
+          ls -la "$APP_PATH/" | head -20
+          
+          if [ ! -f "$APP_PATH/Info.plist" ]; then
+            echo "Info.plist not at root, searching..."
+            find "$APP_PATH" -name "Info.plist" -type f
+            # Expo/RN は Info.plist を embedded にすることがある
+            # PLIST を生成して埋め込む
+            BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist" 2>/dev/null || echo "com.newkakeibo.app")
+            echo "Bundle ID: $BUNDLE_ID"
+          fi
           
           # IPA パッケージング
-          WORK_DIR=$(mktemp -d)
-          mkdir -p "$WORK_DIR/Payload"
-          cp -r "$APP_PATH" "$WORK_DIR/Payload/"
-          cd "$WORK_DIR"
+          mkdir -p Payload
+          cp -a "$APP_PATH" Payload/
+          
+          # 確認
+          echo "=== Payload contents ==="
+          ls -la Payload/
+          ls -la Payload/*.app/ | head -10
+          
           zip -r -q newkakeibo-unsigned.ipa Payload
-          mv newkakeibo-unsigned.ipa "$GITHUB_WORKSPACE/"
+          echo "IPA size: $(du -h newkakeibo-unsigned.ipa | cut -f1)"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
